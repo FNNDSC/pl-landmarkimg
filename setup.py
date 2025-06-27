@@ -19,18 +19,18 @@ def get_version(rel_path: str) -> str:
 
 
 setup(
-    name='chris-plugin-template',
-    version=get_version('app.py'),
-    description='A ChRIS DS plugin template',
+    name='landmarkimg',
+    version=get_version('landmarkimg.py'),
+    description='A ChRIS plugin for marking anatomical landmarks and alignment lines on Leg X-ray images',
     author='FNNDSC',
     author_email='dev@babyMRI.org',
-    url='https://github.com/FNNDSC/python-chrisapp-template',
-    py_modules=['app'],
+    url='https://github.com/FNNDSC/pl-landmarkimg',
+    py_modules=['landmarkimg'],
     install_requires=['chris_plugin'],
     license='MIT',
     entry_points={
         'console_scripts': [
-            'commandname = app:main'
+            'landmarkimg = landmarkimg:main'
         ]
     },
     classifiers=[
