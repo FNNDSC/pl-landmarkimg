@@ -29,7 +29,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -83,13 +83,13 @@ parser.add_argument('--textColor', '-t',
 
 parser.add_argument('--textSize', '-s',
                   dest='textSize',
-                  type=float,
+                  type=int,
                   help='Size of the text displayed on image',
                   default=5)
 
 parser.add_argument('--lineWidth', '-w',
                   dest='lineWidth',
-                  type=float,
+                  type=int,
                   help='Width of lines on image',
                   default=1)
 
@@ -129,7 +129,7 @@ parser.add_argument('--addTextPos',
 parser.add_argument('--addTextSize',
                   dest='addTextSize',
                   default=5,
-                  type=float,
+                  type=int,
                   help='Size of additional text on the final output,'
                        'default value is 5')
 parser.add_argument('--addTextColor',
@@ -138,12 +138,6 @@ parser.add_argument('--addTextColor',
                   type=str,
                   help='Color of additional text on the final output,'
                        'default value is white')
-parser.add_argument('--addTextOffset',
-                  dest='addTextOffset',
-                  default='0,0',
-                  type=str,
-                  help='Offset of additional text on the final output,'
-                       'default value is 0,0')
 parser.add_argument('--outputImageExtension',
                   dest='outputImageExtension',
                   default='jpg',
@@ -256,14 +250,9 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
                 # Plot points
                 draw_point(point, options.pointMarker, options.pointColor, options.pointSize)
 
-        items = data[row]["drawXLine"]
-        for item in items:
-            for i in item:
-                start = d_landmarks[item[i]["start"]]
-                end = d_landmarks[item[i]["end"]]
-                d_lines[i] = [start, end]
-                # Draw lines
-                draw_line(start, end, options.lineColor, options.lineWidth)
+        # Draw lines
+        draw_line(d_landmarks['leftFemurHead'], d_landmarks['leftAnkle'], options.lineColor, options.lineWidth)
+        draw_line(d_landmarks['rightFemurHead'], d_landmarks['rightAnkle'], options.lineColor, options.lineWidth)
 
         # Clean up all matplotlib stuff and save as PNG
         plt.tick_params(left=False, right=False, labelleft=False,
@@ -292,7 +281,6 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
         LOG(f"Input image dimensions {image.shape}")
         LOG(f"Output image dimensions {rotated_image.size}")
 
-
     jsonFilePath = os.path.join(options.outputdir, f'{row}-analysis.json')
     # Open a json writer, and use the json.dumps()
     # function to dump data
@@ -300,6 +288,8 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
     with open(jsonFilePath, 'w', encoding='utf-8') as jsonf:
         jsonf.write(json.dumps(d_json, indent=4))
 
+if __name__ == '__main__':
+    main()
 
 def draw_point(point, marker, color, size):
     plt.scatter(point[0], point[1], marker=marker, color=color, s=size)
@@ -319,8 +309,3 @@ def read_image():
 
 def save_image():
     pass
-
-
-
-if __name__ == '__main__':
-    main()
