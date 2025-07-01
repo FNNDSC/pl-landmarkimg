@@ -13,6 +13,7 @@ from argparse import ArgumentParser, Namespace, ArgumentDefaultsHelpFormatter
 from loguru import logger
 from pflog import pflog
 from chris_plugin import chris_plugin, PathMapper
+import numpy as np
 
 matplotlib.rcParams['font.family'] = 'monospace'
 LOG = logger.debug
@@ -29,7 +30,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.1'
+__version__ = '1.0.2'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -75,75 +76,25 @@ parser.add_argument('--lineColor', '-l',
                   help='Color of the line to be drawn',
                   default='red')
 
-parser.add_argument('--textColor', '-t',
-                  dest='textColor',
-                  type=str,
-                  help='Color of text',
-                  default='white')
-
-parser.add_argument('--textSize', '-s',
-                  dest='textSize',
-                  type=int,
-                  help='Size of the text displayed on image',
-                  default=5)
-
 parser.add_argument('--lineWidth', '-w',
                   dest='lineWidth',
                   type=int,
                   help='Width of lines on image',
                   default=1)
 
-parser.add_argument('--textPos', '-q',
-                  dest='textPos',
-                  type=str,
-                  help='Position of text placement on an input image; left or right',
-                  default="right")
-
-parser.add_argument('--lineGap', '-g',
-                  dest='lineGap',
-                  type=int,
-                  help='Space between lines in pixels',
-                  default=20)
-
 parser.add_argument('--pointSize', '-z',
                   dest='pointSize',
                   type=int,
                   help='The size of points to be plotted on the image',
                   default=10)
-parser.add_argument('--pftelDB',
-                  dest='pftelDB',
-                  default='',
-                  type=str,
-                  help='optional pftel server DB path')
-parser.add_argument('--addText',
-                  dest='addText',
-                  default='',
-                  type=str,
-                  help='optional text to add on the final image')
-parser.add_argument('--addTextPos',
-                  dest='addTextPos',
-                  default='right',
-                  type=str,
-                  help='Position of additional text on the final output,'
-                       'the available choices are top, bottom, left, right and across')
-parser.add_argument('--addTextSize',
-                  dest='addTextSize',
-                  default=5,
-                  type=int,
-                  help='Size of additional text on the final output,'
-                       'default value is 5')
-parser.add_argument('--addTextColor',
-                  dest='addTextColor',
-                  default='white',
-                  type=str,
-                  help='Color of additional text on the final output,'
-                       'default value is white')
+
 parser.add_argument('--outputImageExtension',
                   dest='outputImageExtension',
                   default='jpg',
                   type=str,
                   help='Generated output image file extension,'
                        'default value is jpg')
+
 parser.add_argument('-V', '--version', action='version',
                     version=f'%(prog)s {__version__}')
 
@@ -179,133 +130,273 @@ def preamble_show(options) -> None:
 )
 def main(options: Namespace, inputdir: Path, outputdir: Path):
     """
-    *ChRIS* plugins usually have two positional arguments: an **input directory** containing
-    input files and an **output directory** where to write output files. Command-line arguments
-    are passed to this main method implicitly when ``main()`` is called below without parameters.
+    Generalized ChRIS plugin main method.
 
-    :param options: non-positional arguments parsed by the parser given to @chris_plugin
-    :param inputdir: directory containing (read-only) input files
-    :param outputdir: directory where to write output files
+    - Loads landmark data from a JSON file
+    - Finds and reads input images
+    - Draws landmarks and connecting lines
+    - Scales annotations
+    - Saves annotated images and output JSONs
     """
 
     print(DISPLAY_TITLE)
-
     preamble_show(options)
 
-    # Read json file first
-    str_glob = '%s/**/%s' % (options.inputdir, options.inputJsonName)
+    # Load input JSON data
+    data = load_json_data(str(inputdir), options.inputJsonName)
 
-    l_datapath = glob.glob(str_glob, recursive=True)
+    analysis_data = {}
+    row_key = ""
 
-    jsonFilePath = l_datapath[0]
+    # Process each data entry
+    for row_key, row_info in data.items():
+        # 1. Locate image
+        image_path = find_file_by_pattern(str(inputdir), row_key, options.inputImageName)
+        image = cv2.imread(image_path)
 
-    LOG(f"Reading JSON file from {jsonFilePath}")
+        # 2. Extract landmarks
+        keypoints = extract_keypoints(row_info["landmarks"])
 
-    f = open(jsonFilePath, 'r')
-    data = json.load(f)
+        # 3. Set up figure and draw image
+        fig = setup_figure(image)
 
-    d_landmarks = {}
-    d_lines = {}
-    d_lengths = {}
-    d_json = {}
-    row = ""
-    for row in data:
+        # 4. Scale annotation settings
+        scale_annotations(fig, options)
 
-        file_path = []
-        d_info = {}
-        for root, dirs, files in os.walk(options.inputdir):
-            for dir in dirs:
-                if dir == row:
-                    dir_path = os.path.join(root, dir)
-                    file_path = glob.glob(dir_path + '/**/' + options.inputImageName, recursive=True)
+        # 5. Draw landmarks
+        draw_points(keypoints, draw_point, options)
 
-        LOG(f"Reading input image from {file_path[0]}")
-        image = cv2.imread(file_path[0])
-        # image = Image.open(file_path[0])
+        linePairs = [
+            ("leftFemurHead", "leftAnkle"),
+            ("rightFemurHead", "rightAnkle")
+        ]
 
-        plt.style.use('dark_background')
-        plt.axis('off')
+        # 6. Draw connecting lines
+        draw_named_lines(linePairs, keypoints, draw_line, options)
 
-        max_y, max_x, RGB = image.shape
-        # max_x, max_y = image.size
-        fig = plt.figure(figsize=(max_x / 100, max_y / 100))
-        plt.imshow(image)
+        # 7. Save annotated figure to temporary image
+        temp_img_path = f"/tmp/{row_key}_img.jpg"
+        save_figure_as_image(fig, temp_img_path)
 
-        # autoscale text sizes w.r.t. image
-        options.textSize = fig.get_size_inches()[0] * options.textSize
-        options.addTextSize = fig.get_size_inches()[0] * options.addTextSize
-        options.lineGap = fig.get_size_inches()[0] * options.lineGap
-        options.pointSize = fig.get_size_inches()[0] * options.pointSize
-        height = data[row]["origHeight"]
-        ht_scale = height / max_x
+        # 8. Resize and rotate image
+        final_img = resize_and_rotate_image(temp_img_path, target_width=image.shape[1])
 
-        info = data[row]['info']
-        details = data[row]['details']
+        # 9. Save final image to output directory
+        output_img_path = os.path.join(outputdir, f"{row_key}.{options.outputImageExtension}")
+        save_image(final_img, output_img_path)
 
-        items = data[row]["landmarks"]
-        for item in items:
-            for i in item:
-                point = [item[i]["x"], item[i]["y"]]
-                d_landmarks[i] = point
-                # Plot points
-                draw_point(point, options.pointMarker, options.pointColor, options.pointSize)
+        LOG(f"Input image dimensions: {image.shape}")
+        LOG(f"Output image dimensions: {final_img.size}")
 
-        # Draw lines
-        draw_line(d_landmarks['leftFemurHead'], d_landmarks['leftAnkle'], options.lineColor, options.lineWidth)
-        draw_line(d_landmarks['rightFemurHead'], d_landmarks['rightAnkle'], options.lineColor, options.lineWidth)
+        # 10. Collect analysis data (currently empty)
+        analysis_data[row_key] = {}  # Fill with real metrics or outputs if needed
 
-        # Clean up all matplotlib stuff and save as PNG
-        plt.tick_params(left=False, right=False, labelleft=False,
-                        labelbottom=False, bottom=False)
-        plt.savefig(os.path.join("/tmp", row + "img.jpg"), bbox_inches='tight', pad_inches=0.0)
-        plt.clf()
-
-        # Open an existing image
-        tmpimg = Image.open(os.path.join("/tmp", row + "img.jpg"))
-        x, y = tmpimg.size
-        # Calculate the aspect ratio
-        aspect_ratio = max_x / x
-
-        # Define the target width
-        target_width = int(x * aspect_ratio)
-        target_height = int(y * aspect_ratio)
-
-        # Resize the image
-        resized_image = tmpimg.resize((target_width, target_height))
-
-        # Rotate the image by 90 degrees
-        rotated_image = resized_image.rotate(-90, expand=True)
-
-        # Save the resized image
-        rotated_image.save(os.path.join(options.outputdir, row + f".{options.outputImageExtension}"))
-        LOG(f"Input image dimensions {image.shape}")
-        LOG(f"Output image dimensions {rotated_image.size}")
-
-    jsonFilePath = os.path.join(options.outputdir, f'{row}-analysis.json')
-    # Open a json writer, and use the json.dumps()
-    # function to dump data
-    LOG("Saving %s" % jsonFilePath)
-    with open(jsonFilePath, 'w', encoding='utf-8') as jsonf:
-        jsonf.write(json.dumps(d_json, indent=4))
+    # 11. Save analysis data to JSON
+    output_json_path = os.path.join(outputdir, f"{row_key}-analysis.json")
+    save_json(analysis_data, output_json_path)
 
 if __name__ == '__main__':
     main()
 
-def draw_point(point, marker, color, size):
+def draw_point(point: list, marker: str, color: str, size: float) -> None:
+    """
+    Draw a single point on a matplotlib figure.
+
+    Args:
+        point (list): A list or tuple of two values [x, y] representing the point's coordinates.
+        marker (str): Matplotlib marker style (e.g. 'o', 'x', '.', etc.).
+        color (str): Color of the marker (e.g. 'red', '#00FF00').
+        size (float): Size of the marker in points².
+    """
     plt.scatter(point[0], point[1], marker=marker, color=color, s=size)
 
-def draw_line(start, end, color, linewidth):
-    X = []
-    Y = []
-    X.append(start[0])
-    X.append(end[0])
-    Y.append(start[1])
-    Y.append(end[1])
-    # draw connecting lines
-    plt.plot(X, Y, color=color, linewidth=linewidth)
 
-def read_image():
-    pass
+def draw_line(start: list, end: list, color: str, linewidth: float) -> None:
+    """
+    Draw a straight line between two points on a matplotlib figure.
 
-def save_image():
-    pass
+    Args:
+        start (list): [x, y] coordinates of the line's starting point.
+        end (list): [x, y] coordinates of the line's ending point.
+        color (str): Line color (e.g. 'blue', '#FFAA00').
+        linewidth (float): Thickness of the line in points.
+    """
+    x_coords = [start[0], end[0]]
+    y_coords = [start[1], end[1]]
+    plt.plot(x_coords, y_coords, color=color, linewidth=linewidth)
+
+def load_json_data(inputdir: str, filename: str) -> dict:
+    """
+    Load and parse a JSON file from a directory (recursively).
+
+    Args:
+        inputdir (str): Base directory to search.
+        filename (str): Name of the JSON file to locate.
+
+    Returns:
+        dict: Parsed JSON data.
+
+    Raises:
+        FileNotFoundError: If the JSON file is not found.
+    """
+    json_path = glob.glob(f"{inputdir}/**/{filename}", recursive=True)
+    if not json_path:
+        raise FileNotFoundError(f"{filename} not found in {inputdir}")
+    LOG(f"Reading JSON file from {json_path[0]}")
+    with open(json_path[0], 'r') as f:
+        return json.load(f)
+
+
+def find_file_by_pattern(inputdir: str, subfolder: str, filename: str) -> str:
+    """
+    Find a file within a nested directory structure using a pattern.
+
+    Args:
+        inputdir (str): Base directory.
+        subfolder (str): Target subdirectory or identifier.
+        filename (str): Filename to find.
+
+    Returns:
+        str: Full path to the found file.
+
+    Raises:
+        FileNotFoundError: If the file is not found.
+    """
+    pattern = f"{inputdir}/**/{subfolder}/**/{filename}"
+    matches = glob.glob(pattern, recursive=True)
+    if not matches:
+        raise FileNotFoundError(f"{filename} not found under {subfolder}")
+    LOG(f"Found file: {matches[0]}")
+    return matches[0]
+
+
+def extract_keypoints(keypoint_data: list) -> dict:
+    """
+    Extract keypoints from structured JSON list.
+
+    Args:
+        keypoint_data (list): List of dictionaries with point data.
+
+    Returns:
+        dict: Mapping of point names to [x, y] coordinates.
+    """
+    keypoints = {}
+    for item in keypoint_data:
+        for name, coords in item.items():
+            keypoints[name] = [coords["x"], coords["y"]]
+    return keypoints
+
+
+def setup_figure(image: np.ndarray) -> plt.Figure:
+    """
+    Set up a matplotlib figure and display an image.
+
+    Args:
+        image (np.ndarray): Image array (e.g., from OpenCV).
+
+    Returns:
+        plt.Figure: Configured matplotlib figure.
+    """
+    plt.style.use('dark_background')
+    plt.axis('off')
+    height, width, _ = image.shape
+    fig = plt.figure(figsize=(width / 100, height / 100))
+    plt.imshow(image)
+    return fig
+
+
+def scale_annotations(fig: plt.Figure, options) -> None:
+    """
+    Scale annotation parameters (e.g., text, line width) based on image size.
+
+    Args:
+        fig (plt.Figure): Matplotlib figure object.
+        options: Object with annotation settings to scale (e.g., textSize, lineGap).
+    """
+    scale = fig.get_size_inches()[0]
+    options.pointSize *= scale
+
+
+def draw_points(points: dict, draw_fn, options) -> None:
+    """
+    Draw keypoints on a figure using a provided draw function.
+
+    Args:
+        points (dict): Mapping of point names to [x, y] coordinates.
+        draw_fn (Callable): Function to draw a single point.
+        options: Drawing options (color, size, marker, etc.).
+    """
+    for _, point in points.items():
+        draw_fn(point, options.pointMarker, options.pointColor, options.pointSize)
+
+
+def draw_named_lines(pairs: list, points: dict, draw_fn, options) -> None:
+    """
+    Draw lines between named point pairs.
+
+    Args:
+        pairs (list): List of (point_name_1, point_name_2) tuples.
+        points (dict): Dictionary of available points.
+        draw_fn (Callable): Function to draw a line between two points.
+        options: Line style options (color, width, etc.).
+    """
+    for pt1, pt2 in pairs:
+        if pt1 in points and pt2 in points:
+            draw_fn(points[pt1], points[pt2], options.lineColor, options.lineWidth)
+
+
+def save_figure_as_image(fig: plt.Figure, output_path: str) -> None:
+    """
+    Save a matplotlib figure as an image file.
+
+    Args:
+        fig (plt.Figure): The figure to save.
+        output_path (str): Target file path.
+    """
+    plt.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+    fig.savefig(output_path, bbox_inches='tight', pad_inches=0)
+    plt.clf()
+
+
+def resize_and_rotate_image(image_path: str, target_width: int, rotate_angle: int = -90) -> Image.Image:
+    """
+    Resize and rotate an image to match a target width.
+
+    Args:
+        image_path (str): Path to input image.
+        target_width (int): Desired output width.
+        rotate_angle (int): Degrees to rotate image counter-clockwise.
+
+    Returns:
+        Image.Image: Resized and rotated image.
+    """
+    with Image.open(image_path) as img:
+        original_width, original_height = img.size
+        aspect_ratio = target_width / original_width
+        new_size = (int(original_width * aspect_ratio), int(original_height * aspect_ratio))
+        return img.resize(new_size).rotate(rotate_angle, expand=True)
+
+
+def save_image(image: Image.Image, output_path: str) -> None:
+    """
+    Save a PIL Image to a specified path.
+
+    Args:
+        image (Image.Image): Image to save.
+        output_path (str): Destination path including filename.
+    """
+    image.save(output_path)
+    LOG(f"Saved image to {output_path}")
+
+
+def save_json(data: dict, output_path: str) -> None:
+    """
+    Save a dictionary to a JSON file.
+
+    Args:
+        data (dict): Data to serialize.
+        output_path (str): File path to save to.
+    """
+    LOG(f"Saving JSON data to {output_path}")
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=4)
