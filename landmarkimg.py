@@ -106,24 +106,20 @@ parser.add_argument('--addText',
                     default='',
                     type=str,
                     help='optional text to add on the final image')
+
 parser.add_argument('--addTextSize',
                     dest='addTextSize',
-                    default=5,
+                    default=5.0,
                     type=float,
                     help='Size of additional text on the final output,'
-                         'default value is 5')
+                         'default value is 5.0')
+
 parser.add_argument('--addTextColor',
                     dest='addTextColor',
                     default='white',
                     type=str,
                     help='Color of additional text on the final output,'
                          'default value is white')
-parser.add_argument('--addTextOffset',
-                    dest='addTextOffset',
-                    default='0,0',
-                    type=str,
-                    help='Offset of additional text on the final output,'
-                         'default value is 0,0')
 
 parser.add_argument('-V', '--version', action='version',
                     version=f'%(prog)s {__version__}')
