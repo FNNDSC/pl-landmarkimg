@@ -30,7 +30,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.4'
+__version__ = '1.0.5'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -43,57 +43,87 @@ DISPLAY_TITLE = r"""
 |_|                                                                       |___/ 
 """
 
-
-parser = ArgumentParser(description='A ChRIS plugin for marking anatomical landmarks and alignment lines on Leg X-ray images',
-                        formatter_class=ArgumentDefaultsHelpFormatter)
+parser = ArgumentParser(
+    description='A ChRIS plugin for marking anatomical landmarks and alignment lines on Leg X-ray images',
+    formatter_class=ArgumentDefaultsHelpFormatter)
 parser.add_argument('--inputJsonName', '-j',
-                  dest='inputJsonName',
-                  type=str,
-                  help='Input JSON file name',
-                  default='prediction.json')
+                    dest='inputJsonName',
+                    type=str,
+                    help='Input JSON file name',
+                    default='prediction.json')
 
 parser.add_argument('--inputImageName', '-i',
-                  dest='inputImageName',
-                  type=str,
-                  help='Name of the input image file',
-                  default='leg.png')
+                    dest='inputImageName',
+                    type=str,
+                    help='Name of the input image file',
+                    default='leg.png')
 
 parser.add_argument('--pointMarker', '-p',
-                  dest='pointMarker',
-                  type=str,
-                  help='Point marker',
-                  default='x')
+                    dest='pointMarker',
+                    type=str,
+                    help='Point marker',
+                    default='x')
 
 parser.add_argument('--pointColor', '-c',
-                  dest='pointColor',
-                  type=str,
-                  help='Color of point marker',
-                  default='red')
+                    dest='pointColor',
+                    type=str,
+                    help='Color of point marker',
+                    default='red')
 
 parser.add_argument('--lineColor', '-l',
-                  dest='lineColor',
-                  type=str,
-                  help='Color of the line to be drawn',
-                  default='red')
+                    dest='lineColor',
+                    type=str,
+                    help='Color of the line to be drawn',
+                    default='red')
 
 parser.add_argument('--lineWidth', '-w',
-                  dest='lineWidth',
-                  type=int,
-                  help='Width of lines on image',
-                  default=1)
+                    dest='lineWidth',
+                    type=int,
+                    help='Width of lines on image',
+                    default=1)
 
 parser.add_argument('--pointSize', '-z',
-                  dest='pointSize',
-                  type=int,
-                  help='The size of points to be plotted on the image',
-                  default=10)
+                    dest='pointSize',
+                    type=int,
+                    help='The size of points to be plotted on the image',
+                    default=10)
 
 parser.add_argument('--outputImageExtension',
-                  dest='outputImageExtension',
-                  default='jpg',
-                  type=str,
-                  help='Generated output image file extension,'
-                       'default value is jpg')
+                    dest='outputImageExtension',
+                    default='jpg',
+                    type=str,
+                    help='Generated output image file extension,'
+                         'default value is jpg')
+
+parser.add_argument('--addTextPos', '-q',
+                    dest='addTextPos',
+                    type=str,
+                    help='Position of text placement on an input image; top or bottom',
+                    default="top")
+
+parser.add_argument('--addText',
+                    dest='addText',
+                    default='',
+                    type=str,
+                    help='optional text to add on the final image')
+parser.add_argument('--addTextSize',
+                    dest='addTextSize',
+                    default=5,
+                    type=float,
+                    help='Size of additional text on the final output,'
+                         'default value is 5')
+parser.add_argument('--addTextColor',
+                    dest='addTextColor',
+                    default='white',
+                    type=str,
+                    help='Color of additional text on the final output,'
+                         'default value is white')
+parser.add_argument('--addTextOffset',
+                    dest='addTextOffset',
+                    default='0,0',
+                    type=str,
+                    help='Offset of additional text on the final output,'
+                         'default value is 0,0')
 
 parser.add_argument('-V', '--version', action='version',
                     version=f'%(prog)s {__version__}')
@@ -153,6 +183,7 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
         # 1. Locate image
         image_path = find_file_by_pattern(str(inputdir), row_key, options.inputImageName)
         image = cv2.imread(image_path)
+        max_y, max_x, RGB = image.shape
 
         # 2. Extract landmarks
         keypoints = extract_keypoints(row_info["landmarks"])
@@ -174,24 +205,27 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
         # 6. Draw connecting lines
         draw_named_lines(linePairs, keypoints, draw_line, options)
 
-        # 7. Save annotated figure to temporary image
+        # 7. Write additional text on image
+        add_positioned_text(options, max_x, max_y)
+
+        # 8. Save annotated figure to temporary image
         temp_img_path = f"/tmp/{row_key}_img.jpg"
         save_figure_as_image(fig, temp_img_path)
 
-        # 8. Resize and rotate image
+        # 9. Resize and rotate image
         final_img = resize_and_rotate_image(temp_img_path, target_width=image.shape[1])
 
-        # 9. Save final image to output directory
+        # 10. Save final image to output directory
         output_img_path = os.path.join(outputdir, f"{row_key}.{options.outputImageExtension}")
         save_image(final_img, output_img_path)
 
         LOG(f"Input image dimensions: {image.shape}")
         LOG(f"Output image dimensions: {final_img.size}")
 
-        # 10. Collect analysis data (currently empty)
+        # 11. Collect analysis data (currently empty)
         analysis_data[row_key] = {}  # Fill with real metrics or outputs if needed
 
-    # 11. Save analysis data to JSON
+    # 12. Save analysis data to JSON
     output_json_path = os.path.join(outputdir, f"{row_key}-analysis.json")
     save_json(analysis_data, output_json_path)
 
@@ -315,6 +349,7 @@ def scale_annotations(fig: plt.Figure, options) -> None:
     """
     scale = fig.get_size_inches()[0]
     options.pointSize *= scale
+    options.addTextSize *= scale
 
 
 def draw_points(points: dict, draw_fn, options) -> None:
@@ -328,6 +363,44 @@ def draw_points(points: dict, draw_fn, options) -> None:
     """
     for _, point in points.items():
         draw_fn(point, options.pointMarker, options.pointColor, options.pointSize)
+
+def add_positioned_text(options, max_x, max_y):
+    """
+    Adds a text annotation to a matplotlib plot based on the specified position.
+
+    Parameters:
+    ----------
+    options : object
+        An object with the following required attributes:
+            - addTextPos (str): Position of the text. Accepts "top" or "bottom".
+            - addText (str): The text string to display.
+            - addTextColor (str): Color of the text.
+            - addTextSize (int or float): Font size of the text.
+    max_x : int or float
+        The maximum x-coordinate value for the plot area.
+    max_y : int or float
+        The maximum y-coordinate value for the plot area.
+
+    Raises:
+    ------
+    ValueError:
+        If `options.addTextPos` is not "top" or "bottom".
+    """
+    if options.addTextPos == "top":
+        x_pos = 50
+        y_pos = max_y - 50
+    elif options.addTextPos == "bottom":
+        x_pos = max_x - 200
+        y_pos = max_y - 50
+    else:
+        raise ValueError("Invalid addTextPos. Expected 'top' or 'bottom'.")
+
+    plt.text(
+        x_pos, y_pos, options.addText,
+        color=options.addTextColor,
+        fontsize=options.addTextSize,
+        rotation=90
+    )
 
 
 def draw_named_lines(pairs: list, points: dict, draw_fn, options) -> None:
