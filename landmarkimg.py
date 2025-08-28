@@ -30,7 +30,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.5'
+__version__ = '1.0.6'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -125,7 +125,7 @@ parser.add_argument('-V', '--version', action='version',
                     version=f'%(prog)s {__version__}')
 
 
-def preamble_show(options) -> None:
+def preamble_show(options):
     """
     Just show some preamble "noise" in the output terminal
     """
@@ -150,7 +150,7 @@ def preamble_show(options) -> None:
     parser=parser,
     title='A ChRIS plugin for marking anatomical landmarks',
     category='',                 # ref. https://chrisstore.co/plugins
-    min_memory_limit='1000Mi',    # supported units: Mi, Gi
+    min_memory_limit='2000Mi',    # supported units: Mi, Gi
     min_cpu_limit='4000m',       # millicores, e.g. "1000m" = 1 CPU core
     min_gpu_limit=0              # set min_gpu_limit=1 to enable GPU
 )
@@ -190,16 +190,16 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
         # 4. Scale annotation settings
         scale_annotations(fig, options)
 
-        # 5. Draw landmarks
-        draw_points(keypoints, draw_point, options)
-
         linePairs = [
             ("leftFemurHead", "leftAnkle"),
             ("rightFemurHead", "rightAnkle")
         ]
 
-        # 6. Draw connecting lines
+        # 5. Draw connecting lines
         draw_named_lines(linePairs, keypoints, draw_line, options)
+
+        # 6. Draw landmarks
+        draw_points(keypoints, draw_point, options)
 
         # 7. Write additional text on image
         add_positioned_text(options, max_x, max_y)
@@ -228,7 +228,7 @@ def main(options: Namespace, inputdir: Path, outputdir: Path):
 if __name__ == '__main__':
     main()
 
-def draw_point(point: list, marker: str, color: str, size: float) -> None:
+def draw_point(point: list, marker: str, color: str, size: float, zorder: int):
     """
     Draw a single point on a matplotlib figure.
 
@@ -238,10 +238,10 @@ def draw_point(point: list, marker: str, color: str, size: float) -> None:
         color (str): Color of the marker (e.g. 'red', '#00FF00').
         size (float): Size of the marker in points².
     """
-    plt.scatter(point[0], point[1], marker=marker, color=color, s=size)
+    plt.scatter(point[0], point[1], marker=marker, color=color, s=size, zorder=zorder)
 
 
-def draw_line(start: list, end: list, color: str, linewidth: float) -> None:
+def draw_line(start: list, end: list, color: str, linewidth: float, zorder: int):
     """
     Draw a straight line between two points on a matplotlib figure.
 
@@ -253,7 +253,7 @@ def draw_line(start: list, end: list, color: str, linewidth: float) -> None:
     """
     x_coords = [start[0], end[0]]
     y_coords = [start[1], end[1]]
-    plt.plot(x_coords, y_coords, color=color, linewidth=linewidth)
+    plt.plot(x_coords, y_coords, color=color, linewidth=linewidth, zorder=zorder)
 
 def load_json_data(inputdir: str, filename: str) -> dict:
     """
@@ -335,7 +335,7 @@ def setup_figure(image: np.ndarray) -> plt.Figure:
     return fig
 
 
-def scale_annotations(fig: plt.Figure, options) -> None:
+def scale_annotations(fig: plt.Figure, options):
     """
     Scale annotation parameters (e.g., text, line width) based on image size.
 
@@ -348,7 +348,7 @@ def scale_annotations(fig: plt.Figure, options) -> None:
     options.addTextSize *= scale
 
 
-def draw_points(points: dict, draw_fn, options) -> None:
+def draw_points(points: dict, draw_fn, options):
     """
     Draw keypoints on a figure using a provided draw function.
 
@@ -358,7 +358,7 @@ def draw_points(points: dict, draw_fn, options) -> None:
         options: Drawing options (color, size, marker, etc.).
     """
     for _, point in points.items():
-        draw_fn(point, options.pointMarker, options.pointColor, options.pointSize)
+        draw_fn(point, options.pointMarker, options.pointColor, options.pointSize, zorder=2)
 
 def add_positioned_text(options, max_x, max_y):
     """
@@ -399,7 +399,7 @@ def add_positioned_text(options, max_x, max_y):
     )
 
 
-def draw_named_lines(pairs: list, points: dict, draw_fn, options) -> None:
+def draw_named_lines(pairs: list, points: dict, draw_fn, options):
     """
     Draw lines between named point pairs.
 
@@ -411,10 +411,10 @@ def draw_named_lines(pairs: list, points: dict, draw_fn, options) -> None:
     """
     for pt1, pt2 in pairs:
         if pt1 in points and pt2 in points:
-            draw_fn(points[pt1], points[pt2], options.lineColor, options.lineWidth)
+            draw_fn(points[pt1], points[pt2], options.lineColor, options.lineWidth, zorder=1)
 
 
-def save_figure_as_image(fig: plt.Figure, output_path: str) -> None:
+def save_figure_as_image(fig: plt.Figure, output_path: str):
     """
     Save a matplotlib figure as an image file.
 
@@ -446,7 +446,7 @@ def resize_and_rotate_image(image_path: str, target_width: int, rotate_angle: in
         return img.resize(new_size).rotate(rotate_angle, expand=True)
 
 
-def save_image(image: Image.Image, output_path: str) -> None:
+def save_image(image: Image.Image, output_path: str):
     """
     Save a PIL Image to a specified path.
 
@@ -458,7 +458,7 @@ def save_image(image: Image.Image, output_path: str) -> None:
     LOG(f"Saved image to {output_path}")
 
 
-def save_json(data: dict, output_path: str) -> None:
+def save_json(data: dict, output_path: str):
     """
     Save a dictionary to a JSON file.
 
