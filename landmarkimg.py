@@ -30,7 +30,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.6'
+__version__ = '1.0.7'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -150,7 +150,7 @@ def preamble_show(options):
     parser=parser,
     title='A ChRIS plugin for marking anatomical landmarks',
     category='',                 # ref. https://chrisstore.co/plugins
-    min_memory_limit='2000Mi',    # supported units: Mi, Gi
+    min_memory_limit='4000Mi',    # supported units: Mi, Gi
     min_cpu_limit='4000m',       # millicores, e.g. "1000m" = 1 CPU core
     min_gpu_limit=0              # set min_gpu_limit=1 to enable GPU
 )
