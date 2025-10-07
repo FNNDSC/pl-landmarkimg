@@ -30,7 +30,7 @@ logger.remove()
 logger.opt(colors=True)
 logger.add(sys.stderr, format=logger_format)
 
-__version__ = '1.0.7'
+__version__ = '1.0.8'
 
 DISPLAY_TITLE = r"""
        _        _                 _                      _    _                 
@@ -344,8 +344,8 @@ def scale_annotations(fig: plt.Figure, options):
         options: Object with annotation settings to scale (e.g., textSize, lineGap).
     """
     scale = fig.get_size_inches()[0]
-    options.pointSize *= scale
-    options.addTextSize *= scale
+    options.scaledPointSize = options.pointSize * scale
+    options.scaledAddTextSize = options.addTextSize * scale
 
 
 def draw_points(points: dict, draw_fn, options):
@@ -358,7 +358,7 @@ def draw_points(points: dict, draw_fn, options):
         options: Drawing options (color, size, marker, etc.).
     """
     for _, point in points.items():
-        draw_fn(point, options.pointMarker, options.pointColor, options.pointSize, zorder=2)
+        draw_fn(point, options.pointMarker, options.pointColor, options.scaledPointSize, zorder=2)
 
 def add_positioned_text(options, max_x, max_y):
     """
@@ -394,7 +394,7 @@ def add_positioned_text(options, max_x, max_y):
     plt.text(
         x_pos, y_pos, options.addText,
         color=options.addTextColor,
-        fontsize=options.addTextSize,
+        fontsize=options.scaledAddTextSize,
         rotation=90
     )
 
@@ -423,7 +423,10 @@ def save_figure_as_image(fig: plt.Figure, output_path: str):
         output_path (str): Target file path.
     """
     plt.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
-    fig.savefig(output_path, bbox_inches='tight', pad_inches=0)
+    try:
+        fig.savefig(output_path, bbox_inches='tight', pad_inches=0)
+    except Exception as ex:
+        LOG(ex)
     plt.clf()
 
 
